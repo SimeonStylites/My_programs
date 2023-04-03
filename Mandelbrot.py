@@ -12,7 +12,7 @@ def draw(color,c):
     y = 513 - 256*c.imag
     line(screen,color,(x,y),(x,y))
 
-def mandelbrot_bw(precision):
+def mandelbrot(precision):
     """
     Draw a Mandelbrot set. If the recurent expression (z=z*z+c)
     rises fast, the color is darker. Points, where the expression
@@ -20,7 +20,7 @@ def mandelbrot_bw(precision):
     precision - number of steps in cycle, where it is defined,
     is the point in the set or not
     """
-    #checking every pixel
+    #checking every pixel on the window
     for pixel in range(1024*1024):
         c = complex(-2+(pixel%1024+1)/256, -2+(pixel//1024+1)/256)
         z = complex(0,0)
@@ -40,9 +40,10 @@ screen = pygame.display.set_mode((1024, 1024))
 clock = pygame.time.Clock()
 finished = False
 
-mandelbrot_bw(100)  #number of iterations for every pixel in set
+mandelbrot(100)  #number of iterations for every pixel in set
 pygame.display.update()
-pygame.image.save(screen, "Mandelbrot.jpeg")
+#Saving an image of a set in current folder
+#pygame.image.save(screen, "Mandelbrot.jpeg")
 
 while not finished:
     clock.tick(FPS)
