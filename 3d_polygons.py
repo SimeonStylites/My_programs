@@ -30,71 +30,84 @@ def is_point_beside_plane(point,plane):
 	coef = np.linalg.solve(M,v)
 	return (0<coef[0]<1) and (coef[1]>0) and (coef[2]>0) and (coef[1]+coef[2]<1)
 
-def center(point_A,point_B):
-	return 0.5*(point_A+point_B)
+def center(points):
+	center = np.array([0,0,0])
+	for point in points:
+		center = center + 1/len(points)*point
+	return center
 	
-def draw_point(point,color):
-	projection = coord3d_to_coordscreen(point)
-	pixel = coordscreen_to_pixels(projection)
-	screen.set_at(pixel,color)
+def draw_point(point,color,is_visible):
+	if is_visible:
+		projection = coord3d_to_coordscreen(point)
+		pixel = coordscreen_to_pixels(projection)
+		screen.set_at(pixel,color)
 	
-def draw_line(point_A,point_B,color):
-	projection_A = coord3d_to_coordscreen(point_A)
-	pixel_A = coordscreen_to_pixels(projection_A)
-	projection_B = coord3d_to_coordscreen(point_B)
-	pixel_B = coordscreen_to_pixels(projection_B)
-	aaline(screen, color, pixel_A, pixel_B)
+def draw_line(point_A,point_B,color,is_visible):
+	if is_visible:
+		projection_A = coord3d_to_coordscreen(point_A)
+		pixel_A = coordscreen_to_pixels(projection_A)
+		projection_B = coord3d_to_coordscreen(point_B)
+		pixel_B = coordscreen_to_pixels(projection_B)
+		aaline(screen, color, pixel_A, pixel_B)
+	
+def draw_triangle(point_A,point_B,point_C,color,is_visible):
+	if is_visible:
+		projection_A = coord3d_to_coordscreen(point_A)
+		pixel_A = coordscreen_to_pixels(projection_A)
+		projection_B = coord3d_to_coordscreen(point_B)
+		pixel_B = coordscreen_to_pixels(projection_B)
+		projection_C = coord3d_to_coordscreen(point_C)
+		pixel_C = coordscreen_to_pixels(projection_C)
+		polygon(screen,color,[pixel_A, pixel_B, pixel_C])
 
 def draw_tetr(tetr,color):
 	"""
 	Draw lines - projections of tetrahedrons ribs
 	Not draw some ribs if point is behind plane or a rib is behind two planes
 	"""
+	
 	A = is_point_beside_plane(tetr[1],[tetr[2],tetr[3],tetr[4]])
 	B = is_point_beside_plane(tetr[2],[tetr[1],tetr[3],tetr[4]])
 	C = is_point_beside_plane(tetr[3],[tetr[1],tetr[2],tetr[4]])
 	D = is_point_beside_plane(tetr[4],[tetr[1],tetr[2],tetr[3]])
-	AB = (is_point_beside_plane(center(tetr[1],tetr[2]),[tetr[1],tetr[3],tetr[4]]) or
-			is_point_beside_plane(center(tetr[1],tetr[2]),[tetr[2],tetr[3],tetr[4]]))
-	AC = (is_point_beside_plane(center(tetr[1],tetr[3]),[tetr[1],tetr[2],tetr[4]]) or
-			is_point_beside_plane(center(tetr[1],tetr[3]),[tetr[3],tetr[2],tetr[4]]))
-	AD = (is_point_beside_plane(center(tetr[1],tetr[4]),[tetr[1],tetr[2],tetr[3]]) or
-			is_point_beside_plane(center(tetr[1],tetr[4]),[tetr[4],tetr[2],tetr[3]]))
-	BC = (is_point_beside_plane(center(tetr[2],tetr[3]),[tetr[2],tetr[1],tetr[4]]) or
-			is_point_beside_plane(center(tetr[2],tetr[3]),[tetr[3],tetr[1],tetr[4]]))
-	BD = (is_point_beside_plane(center(tetr[2],tetr[4]),[tetr[2],tetr[1],tetr[3]]) or
-			is_point_beside_plane(center(tetr[2],tetr[4]),[tetr[4],tetr[1],tetr[3]]))
-	CD = (is_point_beside_plane(center(tetr[3],tetr[4]),[tetr[3],tetr[1],tetr[2]]) or
-			is_point_beside_plane(center(tetr[3],tetr[4]),[tetr[4],tetr[1],tetr[2]]))
-	if A:
-		draw_line(tetr[2],tetr[3],color)
-		draw_line(tetr[2],tetr[4],color)
-		draw_line(tetr[3],tetr[4],color)
-	elif B:
-		draw_line(tetr[1],tetr[3],color)
-		draw_line(tetr[1],tetr[4],color)
-		draw_line(tetr[3],tetr[4],color)
-	elif C:
-		draw_line(tetr[1],tetr[2],color)
-		draw_line(tetr[1],tetr[4],color)
-		draw_line(tetr[2],tetr[4],color)
-	elif D:
-		draw_line(tetr[1],tetr[2],color)
-		draw_line(tetr[1],tetr[3],color)
-		draw_line(tetr[2],tetr[3],color)
-	else:
-		if not AB:
-			draw_line(tetr[1],tetr[2],color)
-		if not AC:	
-			draw_line(tetr[1],tetr[3],color)
-		if not AD:
-			draw_line(tetr[1],tetr[4],color)
-		if not BC:
-			draw_line(tetr[2],tetr[3],color)
-		if not BD:
-			draw_line(tetr[2],tetr[4],color)
-		if not CD:
-			draw_line(tetr[3],tetr[4],color)
+	AB = (is_point_beside_plane(center([tetr[1],tetr[2]]),[tetr[1],tetr[3],tetr[4]]) or
+			is_point_beside_plane(center([tetr[1],tetr[2]]),[tetr[2],tetr[3],tetr[4]]))
+	AC = (is_point_beside_plane(center([tetr[1],tetr[3]]),[tetr[1],tetr[2],tetr[4]]) or
+			is_point_beside_plane(center([tetr[1],tetr[3]]),[tetr[3],tetr[2],tetr[4]]))
+	AD = (is_point_beside_plane(center([tetr[1],tetr[4]]),[tetr[1],tetr[2],tetr[3]]) or
+			is_point_beside_plane(center([tetr[1],tetr[4]]),[tetr[4],tetr[2],tetr[3]]))
+	BC = (is_point_beside_plane(center([tetr[2],tetr[3]]),[tetr[2],tetr[1],tetr[4]]) or
+			is_point_beside_plane(center([tetr[2],tetr[3]]),[tetr[3],tetr[1],tetr[4]]))
+	BD = (is_point_beside_plane(center([tetr[2],tetr[4]]),[tetr[2],tetr[1],tetr[3]]) or
+			is_point_beside_plane(center([tetr[2],tetr[4]]),[tetr[4],tetr[1],tetr[3]]))
+	CD = (is_point_beside_plane(center([tetr[3],tetr[4]]),[tetr[3],tetr[1],tetr[2]]) or
+			is_point_beside_plane(center([tetr[3],tetr[4]]),[tetr[4],tetr[1],tetr[2]]))
+	ABC = (is_point_beside_plane(center([tetr[1],tetr[2],tetr[3]]),[tetr[1],tetr[2],tetr[4]]) or
+			is_point_beside_plane(center([tetr[1],tetr[2],tetr[3]]),[tetr[1],tetr[3],tetr[4]]) or
+			is_point_beside_plane(center([tetr[1],tetr[2],tetr[3]]),[tetr[2],tetr[3],tetr[4]]))
+	ABD = (is_point_beside_plane(center([tetr[1],tetr[2],tetr[4]]),[tetr[1],tetr[2],tetr[3]]) or
+			is_point_beside_plane(center([tetr[1],tetr[2],tetr[4]]),[tetr[1],tetr[3],tetr[4]]) or
+			is_point_beside_plane(center([tetr[1],tetr[2],tetr[4]]),[tetr[2],tetr[3],tetr[4]]))
+	ACD = (is_point_beside_plane(center([tetr[1],tetr[3],tetr[4]]),[tetr[1],tetr[2],tetr[3]]) or
+			is_point_beside_plane(center([tetr[1],tetr[3],tetr[4]]),[tetr[1],tetr[2],tetr[4]]) or
+			is_point_beside_plane(center([tetr[1],tetr[3],tetr[4]]),[tetr[2],tetr[3],tetr[4]]))
+	BCD = (is_point_beside_plane(center([tetr[2],tetr[3],tetr[4]]),[tetr[1],tetr[2],tetr[3]]) or
+			is_point_beside_plane(center([tetr[2],tetr[3],tetr[4]]),[tetr[1],tetr[2],tetr[4]]) or
+			is_point_beside_plane(center([tetr[2],tetr[3],tetr[4]]),[tetr[1],tetr[3],tetr[4]]))
+	draw_triangle(tetr[1],tetr[2],tetr[3],RED,
+					(not A) and (not B) and (not C) and (not AB) and (not BC) and (not AC) and (not ABC))
+	draw_triangle(tetr[1],tetr[2],tetr[4],YELLOW,
+					(not A) and (not B) and (not D) and (not AB) and (not BD) and (not AD) and (not ABD))
+	draw_triangle(tetr[1],tetr[3],tetr[4],GREEN,
+					(not A) and (not C) and (not D) and (not AC) and (not CD) and (not AD) and (not ACD))
+	draw_triangle(tetr[2],tetr[3],tetr[4],BLUE,
+					(not B) and (not C) and (not D) and (not BC) and (not CD) and (not BD) and (not BCD))
+	draw_line(tetr[1],tetr[2],color, (not A) and (not B) and (not AB))
+	draw_line(tetr[1],tetr[3],color, (not A) and (not C) and (not AC))
+	draw_line(tetr[1],tetr[4],color, (not A) and (not D) and (not AD))
+	draw_line(tetr[2],tetr[3],color, (not B) and (not C) and (not BC))
+	draw_line(tetr[2],tetr[4],color, (not B) and (not D) and (not BD))
+	draw_line(tetr[3],tetr[4],color, (not C) and (not D) and (not CD))
 		
 def figure_move(tetr,v):
 	"""
@@ -137,8 +150,14 @@ finished = False
 
 BLACK = (0,0,0)
 WHITE = (255,255,255)
+GRAY = (125, 125, 125)
+RED = (255,0,0)
+GREEN = (0,255,0)
+BLUE = (0,0,255)
+YELLOW = (255,255,0)
+
 #First coordinates of the center of tetrahedron
-point_O = np.array([-1,-1,-3])
+point_O = np.array([-0.5,-0.5,-2])
 #First local coordinates of tetrahedron points
 vec_OA = np.array([3**0.5/6,-6**0.5/12,0.5])
 vec_OB = np.array([-3**0.5/3,-6**0.5/12,0])
@@ -146,9 +165,14 @@ vec_OC = np.array([3**0.5/6,-6**0.5/12,-0.5])
 vec_OD = np.array([0,6**0.5/4,0])
 tetrahedron = np.array([point_O,point_O+vec_OA,point_O+vec_OB,
 						point_O+vec_OC,point_O+vec_OD])
-#rotation around vector (0,1,0) on 1 degree in a frame
-rot = np.quaternion(np.cos(np.pi/360),0,np.sin(np.pi/360),0)
-draw_point(point_O,WHITE)
+#rotation around vector (0,1,0) on 2 degree in a frame
+alpha = np.pi/180
+rot1 = np.quaternion(np.cos(alpha),0,np.sin(alpha),0)
+rot1r = np.quaternion(np.cos(alpha),0,-np.sin(alpha),0)
+rot2 = np.quaternion(np.cos(alpha),np.sin(alpha),0,0)
+rot2r = np.quaternion(np.cos(alpha),-np.sin(alpha),0,0)
+rot3 = np.quaternion(np.cos(alpha),0,0,np.sin(alpha))
+rot3r = np.quaternion(np.cos(alpha),0,0,-np.sin(alpha))
 draw_tetr(tetrahedron,WHITE)
 pygame.display.update()
 screen.fill(BLACK)
@@ -159,6 +183,12 @@ move_up = False
 move_down = False
 move_away = False
 move_towards = False
+rot_010 = False
+rot_010r = False
+rot_100 = False
+rot_100r = False
+rot_001 = False
+rot_001r = False
 
 while not finished:
 	clock.tick(FPS)
@@ -181,6 +211,18 @@ while not finished:
 				move_away = True
 			if event.key == pygame.K_s:
 				move_towards = True
+			if event.key == pygame.K_t:
+				rot_010 = True
+			if event.key == pygame.K_r:
+				rot_010r = True
+			if event.key == pygame.K_f:
+				rot_100 = True
+			if event.key == pygame.K_g:
+				rot_100r = True
+			if event.key == pygame.K_v:
+				rot_001 = True
+			if event.key == pygame.K_b:
+				rot_001r = True
 		elif event.type == pygame.KEYUP:
 			if event.key == pygame.K_RIGHT:
 				move_right = False
@@ -194,6 +236,18 @@ while not finished:
 				move_away = False
 			if event.key == pygame.K_s:
 				move_towards = False
+			if event.key == pygame.K_t:
+				rot_010 = False
+			if event.key == pygame.K_r:
+				rot_010r = False
+			if event.key == pygame.K_f:
+				rot_100 = False
+			if event.key == pygame.K_g:
+				rot_100r = False
+			if event.key == pygame.K_v:
+				rot_001 = False
+			if event.key == pygame.K_b:
+				rot_001r = False
 	if move_right:
 		figure_move(tetrahedron,[0.01,0,0])
 	if move_left:
@@ -206,7 +260,19 @@ while not finished:
 		figure_move(tetrahedron,[0,0,-0.01])
 	if move_towards:
 		figure_move(tetrahedron,[0,0,0.01])
-	rotate(rot,tetrahedron)
+	if rot_010:
+		rotate(rot1,tetrahedron)
+	if rot_010r:
+		rotate(rot1r,tetrahedron)
+	if rot_100:
+		rotate(rot2,tetrahedron)
+	if rot_100r:
+		rotate(rot2r,tetrahedron)
+	if rot_001:
+		rotate(rot3,tetrahedron)
+	if rot_001r:
+		rotate(rot3r,tetrahedron)
+	
 	draw_tetr(tetrahedron,WHITE)
 	pygame.display.update()
 	screen.fill(BLACK)
