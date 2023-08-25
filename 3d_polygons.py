@@ -16,6 +16,20 @@ def coordscreen_to_pixels(projection):
 	-1<x_coord<1; -1<y_coord<1
 	"""
 	return (int(500.0*(projection[0]+1.0)),int(-500.0*(projection[1]-1.0)))
+
+def projection_point_plane(point,plane):
+	"""
+	Return point_A', which is projection of point_A on the plane
+	"""
+	M1 = np.array([[plane[1][0]-plane[0][0],plane[1][1]-plane[0][1],plane[1][2]-plane[0][2]],
+					 [plane[2][0]-plane[0][0],plane[2][1]-plane[0][1],plane[2][2]-plane[0][2]]])
+	M2 = np.array([[plane[1][0]-plane[0][0],plane[2][0]-plane[0][0]],
+					 [plane[1][1]-plane[0][1],plane[2][1]-plane[0][1]],
+					 [plane[1][2]-plane[0][2],plane[2][2]-plane[0][2]]])
+	v1 = np.array([np.dot(point,plane[1]-plane[0]),
+					np.dot(point,plane[2]-plane[0])])
+	uv = np.linalg.solve(np.dot(M1,M2),v1-np.dot(M1,plane[0]))
+	return plane[0]+np.dot(M2,uv)
 	
 def is_point_beside_plane(point,plane):
 	"""
@@ -38,9 +52,11 @@ def center(points):
 	
 def draw_point(point,color,is_visible):
 	if is_visible:
-		projection = coord3d_to_coordscreen(point)
-		pixel = coordscreen_to_pixels(projection)
-		screen.set_at(pixel,color)
+		is_visible2 = point[2]<-1 and point[2]<point[0]<-point[2] and point[2]<point[1]<-point[2]
+		if is_visible2:
+			projection = coord3d_to_coordscreen(point)
+			pixel = coordscreen_to_pixels(projection)
+			screen.set_at(pixel,color)
 	
 def draw_line(point_A,point_B,color,is_visible):
 	if is_visible:
@@ -59,6 +75,29 @@ def draw_triangle(point_A,point_B,point_C,color,is_visible):
 		projection_C = coord3d_to_coordscreen(point_C)
 		pixel_C = coordscreen_to_pixels(projection_C)
 		polygon(screen,color,[pixel_A, pixel_B, pixel_C])
+		
+def draw_triangle_with_lights(point_A,point_B,point_C,color,is_visible):
+	if is_visible:
+		M = projection_point_plane(point_S,[point_A,point_B,point_C])
+		m = np.linalg.norm(M,ord=2)
+		pixel_A = np.array(coordscreen_to_pixels(coord3d_to_coordscreen(point_A)))
+		pixel_B = np.array(coordscreen_to_pixels(coord3d_to_coordscreen(point_B)))
+		pixel_C = np.array(coordscreen_to_pixels(coord3d_to_coordscreen(point_C)))
+		u, v = pixel_B-pixel_A, pixel_C-pixel_A
+		AB, AC = point_B-point_A, point_C-point_A
+		n_points = 60
+		for i in range(n_points):
+			for j in range(n_points-i):
+				R = point_A+AB*i/n_points+AC*j/n_points-point_S
+				r = np.linalg.norm(R,ord=2)
+				sin = m/r
+				ds = sin / (r*r)
+				if ds>1:
+					ds = 1
+				pixel = pixel_A + u*i/n_points + v*j/n_points
+				color_light = (int(color[0]*ds),int(color[1]*ds),int(color[2]*ds))
+				screen.set_at((int(pixel[0]),int(pixel[1])),color_light)
+				
 
 def draw_tetr(tetr,color):
 	"""
@@ -94,20 +133,20 @@ def draw_tetr(tetr,color):
 	BCD = (is_point_beside_plane(center([tetr[2],tetr[3],tetr[4]]),[tetr[1],tetr[2],tetr[3]]) or
 			is_point_beside_plane(center([tetr[2],tetr[3],tetr[4]]),[tetr[1],tetr[2],tetr[4]]) or
 			is_point_beside_plane(center([tetr[2],tetr[3],tetr[4]]),[tetr[1],tetr[3],tetr[4]]))
-	draw_triangle(tetr[1],tetr[2],tetr[3],RED,
+	draw_triangle_with_lights(tetr[1],tetr[2],tetr[3],RED,
 					(not A) and (not B) and (not C) and (not AB) and (not BC) and (not AC) and (not ABC))
-	draw_triangle(tetr[1],tetr[2],tetr[4],YELLOW,
+	draw_triangle_with_lights(tetr[1],tetr[2],tetr[4],YELLOW,
 					(not A) and (not B) and (not D) and (not AB) and (not BD) and (not AD) and (not ABD))
-	draw_triangle(tetr[1],tetr[3],tetr[4],GREEN,
+	draw_triangle_with_lights(tetr[1],tetr[3],tetr[4],GREEN,
 					(not A) and (not C) and (not D) and (not AC) and (not CD) and (not AD) and (not ACD))
-	draw_triangle(tetr[2],tetr[3],tetr[4],BLUE,
+	draw_triangle_with_lights(tetr[2],tetr[3],tetr[4],BLUE,
 					(not B) and (not C) and (not D) and (not BC) and (not CD) and (not BD) and (not BCD))
-	draw_line(tetr[1],tetr[2],color, (not A) and (not B) and (not AB))
-	draw_line(tetr[1],tetr[3],color, (not A) and (not C) and (not AC))
-	draw_line(tetr[1],tetr[4],color, (not A) and (not D) and (not AD))
-	draw_line(tetr[2],tetr[3],color, (not B) and (not C) and (not BC))
-	draw_line(tetr[2],tetr[4],color, (not B) and (not D) and (not BD))
-	draw_line(tetr[3],tetr[4],color, (not C) and (not D) and (not CD))
+	#draw_line(tetr[1],tetr[2],color, (not A) and (not B) and (not AB))
+	#draw_line(tetr[1],tetr[3],color, (not A) and (not C) and (not AC))
+	#draw_line(tetr[1],tetr[4],color, (not A) and (not D) and (not AD))
+	#draw_line(tetr[2],tetr[3],color, (not B) and (not C) and (not BC))
+	#draw_line(tetr[2],tetr[4],color, (not B) and (not D) and (not BD))
+	#draw_line(tetr[3],tetr[4],color, (not C) and (not D) and (not CD))
 		
 def figure_move(tetr,v):
 	"""
@@ -156,15 +195,19 @@ GREEN = (0,255,0)
 BLUE = (0,0,255)
 YELLOW = (255,255,0)
 
+#Point of view / origin point
+point_O = np.array([0,0,0])
+#Light
+point_S = np.array([0,0,0])
 #First coordinates of the center of tetrahedron
-point_O = np.array([-0.5,-0.5,-2])
+point_T = np.array([0,0,-1.5])
 #First local coordinates of tetrahedron points
-vec_OA = np.array([3**0.5/6,-6**0.5/12,0.5])
-vec_OB = np.array([-3**0.5/3,-6**0.5/12,0])
-vec_OC = np.array([3**0.5/6,-6**0.5/12,-0.5])
-vec_OD = np.array([0,6**0.5/4,0])
-tetrahedron = np.array([point_O,point_O+vec_OA,point_O+vec_OB,
-						point_O+vec_OC,point_O+vec_OD])
+vec_TA = np.array([3**0.5/6,-6**0.5/12,0.5])
+vec_TB = np.array([-3**0.5/3,-6**0.5/12,0])
+vec_TC = np.array([3**0.5/6,-6**0.5/12,-0.5])
+vec_TD = np.array([0,6**0.5/4,0])
+tetrahedron = np.array([point_T,point_T+vec_TA,point_T+vec_TB,
+						point_T+vec_TC,point_T+vec_TD])
 #rotation around vector (0,1,0) on 2 degree in a frame
 alpha = np.pi/180
 rot1 = np.quaternion(np.cos(alpha),0,np.sin(alpha),0)
@@ -183,12 +226,20 @@ move_up = False
 move_down = False
 move_away = False
 move_towards = False
+
 rot_010 = False
 rot_010r = False
 rot_100 = False
 rot_100r = False
 rot_001 = False
 rot_001r = False
+
+light_right = False
+light_left = False
+light_up = False
+light_down = False
+light_away = False
+light_towards = False
 
 while not finished:
 	clock.tick(FPS)
@@ -199,6 +250,7 @@ while not finished:
 		if window_closed or escape_pressed:
 			finished = True
 		elif event.type == pygame.KEYDOWN:
+			
 			if event.key == pygame.K_RIGHT:
 				move_right = True
 			if event.key == pygame.K_LEFT:
@@ -211,6 +263,7 @@ while not finished:
 				move_away = True
 			if event.key == pygame.K_s:
 				move_towards = True
+			
 			if event.key == pygame.K_t:
 				rot_010 = True
 			if event.key == pygame.K_r:
@@ -223,7 +276,18 @@ while not finished:
 				rot_001 = True
 			if event.key == pygame.K_b:
 				rot_001r = True
+			
+			if event.key == pygame.K_l:
+				light_right = True
+			if event.key == pygame.K_j:
+				light_left = True
+			if event.key == pygame.K_i:
+				light_up = True
+			if event.key == pygame.K_k:
+				light_down = True
+			
 		elif event.type == pygame.KEYUP:
+			
 			if event.key == pygame.K_RIGHT:
 				move_right = False
 			if event.key == pygame.K_LEFT:
@@ -236,6 +300,7 @@ while not finished:
 				move_away = False
 			if event.key == pygame.K_s:
 				move_towards = False
+			
 			if event.key == pygame.K_t:
 				rot_010 = False
 			if event.key == pygame.K_r:
@@ -248,8 +313,18 @@ while not finished:
 				rot_001 = False
 			if event.key == pygame.K_b:
 				rot_001r = False
+			
+			if event.key == pygame.K_l:
+				light_right = False
+			if event.key == pygame.K_j:
+				light_left = False
+			if event.key == pygame.K_i:
+				light_up = False
+			if event.key == pygame.K_k:
+				light_down = False
+			
 	if move_right:
-		figure_move(tetrahedron,[0.01,0,0])
+		figure_move(tetrahedron,np.array([0.01,0,0]))
 	if move_left:
 		figure_move(tetrahedron,[-0.01,0,0])
 	if move_up:
@@ -260,6 +335,7 @@ while not finished:
 		figure_move(tetrahedron,[0,0,-0.01])
 	if move_towards:
 		figure_move(tetrahedron,[0,0,0.01])
+	
 	if rot_010:
 		rotate(rot1,tetrahedron)
 	if rot_010r:
@@ -272,6 +348,15 @@ while not finished:
 		rotate(rot3,tetrahedron)
 	if rot_001r:
 		rotate(rot3r,tetrahedron)
+	
+	if light_right:
+		point_S = point_S + np.array([0.01,0,0])
+	if light_left:
+		point_S = point_S + np.array([-0.01,0,0])
+	if light_up:
+		point_S = point_S + np.array([0,0.01,0])
+	if light_down:
+		point_S = point_S + np.array([0,-0.01,0])
 	
 	draw_tetr(tetrahedron,WHITE)
 	pygame.display.update()
