@@ -85,7 +85,7 @@ def draw_triangle_with_lights(point_A,point_B,point_C,color,is_visible):
 		pixel_C = np.array(coordscreen_to_pixels(coord3d_to_coordscreen(point_C)))
 		u, v = pixel_B-pixel_A, pixel_C-pixel_A
 		AB, AC = point_B-point_A, point_C-point_A
-		n_points = 60
+		n_points = 120
 		for i in range(n_points):
 			for j in range(n_points-i):
 				R = point_A+AB*i/n_points+AC*j/n_points-point_S
@@ -95,7 +95,8 @@ def draw_triangle_with_lights(point_A,point_B,point_C,color,is_visible):
 				if ds>1:
 					ds = 1
 				pixel = pixel_A + u*i/n_points + v*j/n_points
-				color_light = (int(color[0]*ds),int(color[1]*ds),int(color[2]*ds))
+				color_light = (int(color[0]*ds*0.5+0.5),
+								int(color[1]*ds*0.5+0.5),int(color[2]*ds*0.5+0.5))
 				screen.set_at((int(pixel[0]),int(pixel[1])),color_light)
 				
 
