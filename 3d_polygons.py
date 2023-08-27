@@ -221,13 +221,6 @@ draw_tetr(tetrahedron,WHITE)
 pygame.display.update()
 screen.fill(BLACK)
 
-move_right = False
-move_left = False
-move_up = False
-move_down = False
-move_away = False
-move_towards = False
-
 rot_010 = False
 rot_010r = False
 rot_100 = False
@@ -251,19 +244,6 @@ while not finished:
 		if window_closed or escape_pressed:
 			finished = True
 		elif event.type == pygame.KEYDOWN:
-			
-			if event.key == pygame.K_RIGHT:
-				move_right = True
-			if event.key == pygame.K_LEFT:
-				move_left = True
-			if event.key == pygame.K_UP:
-				move_up = True
-			if event.key == pygame.K_DOWN:
-				move_down = True
-			if event.key == pygame.K_w:
-				move_away = True
-			if event.key == pygame.K_s:
-				move_towards = True
 			
 			if event.key == pygame.K_t:
 				rot_010 = True
@@ -289,19 +269,6 @@ while not finished:
 			
 		elif event.type == pygame.KEYUP:
 			
-			if event.key == pygame.K_RIGHT:
-				move_right = False
-			if event.key == pygame.K_LEFT:
-				move_left = False
-			if event.key == pygame.K_UP:
-				move_up = False
-			if event.key == pygame.K_DOWN:
-				move_down = False
-			if event.key == pygame.K_w:
-				move_away = False
-			if event.key == pygame.K_s:
-				move_towards = False
-			
 			if event.key == pygame.K_t:
 				rot_010 = False
 			if event.key == pygame.K_r:
@@ -323,20 +290,27 @@ while not finished:
 				light_up = False
 			if event.key == pygame.K_k:
 				light_down = False
-			
-	if move_right:
-		figure_move(tetrahedron,np.array([0.01,0,0]))
-	if move_left:
-		figure_move(tetrahedron,[-0.01,0,0])
-	if move_up:
-		figure_move(tetrahedron,[0,0.01,0])
-	if move_down:
-		figure_move(tetrahedron,[0,-0.01,0])
-	if move_away:
-		figure_move(tetrahedron,[0,0,-0.01])
-	if move_towards:
-		figure_move(tetrahedron,[0,0,0.01])
-	
+
+	pressed_keys = pygame.key.get_pressed()
+
+	move_direction = np.zeros(3)
+	if pressed_keys[pygame.K_RIGHT]:
+		move_direction[0] += +0.01
+	if pressed_keys[pygame.K_LEFT]:
+		move_direction[0] += -0.01
+
+	if pressed_keys[pygame.K_UP]:
+		move_direction[1] += +0.01
+	if pressed_keys[pygame.K_DOWN]:
+		move_direction[1] += -0.01
+
+	if pressed_keys[pygame.K_w]:
+		move_direction[2] += -0.01
+	if pressed_keys[pygame.K_s]:
+		move_direction[2] += +0.01
+
+	figure_move(tetrahedron, move_direction)
+
 	if rot_010:
 		rotate(rot1,tetrahedron)
 	if rot_010r:
