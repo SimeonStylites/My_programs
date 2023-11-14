@@ -1,5 +1,6 @@
 import tkinter as tk
 
+
 def check_word():
     global right_guesses
     global lists
@@ -12,8 +13,10 @@ def check_word():
     if right_guesses == 10:
         congratulations()
 
+
 def congratulations():
     prize["text"] = "Congratulations! Very good memory!\nYour present is in the yoga mat!"
+
 
 def change_list():
     global list_number
@@ -30,6 +33,7 @@ def unpack_lists(titles):
             for line in input:
                 lists.append(line.split())
     return lists
+
 
 def main():
     global titles
