@@ -3,6 +3,15 @@ import time
 import numpy as np
 import quaternion
 from pygame.draw import *
+import colorsys
+
+BLACK = (0,0,0)
+WHITE = (255,255,255)
+GRAY = (125, 125, 125)
+RED = (255,0,0)
+GREEN = (0,255,0)
+BLUE = (0,0,255)
+YELLOW = (255,255,0)
 
 def coord3d_to_coordscreen(point):
 	"""
@@ -41,8 +50,11 @@ def is_point_beside_plane(point,plane):
 					 [point[1],plane[0][1]-plane[1][1],plane[0][1]-plane[2][1]],
 					 [point[2],plane[0][2]-plane[1][2],plane[0][2]-plane[2][2]]])
 	v = np.array([plane[0][0],plane[0][1],plane[0][2]])
-	coef = np.linalg.solve(M,v)
-	return (0<coef[0]<1) and (coef[1]>0) and (coef[2]>0) and (coef[1]+coef[2]<1)
+	try:
+		coef = np.linalg.solve(M,v)
+	except np.linalg.LinAlgError:
+		return False
+	return (0<coef[0]<1) and (coef[1]>=-1e-9) and (coef[2]>=-1e-9) and (coef[1]+coef[2]<=1+1e-9)
 
 def center(points):
 	center = np.array([0,0,0])
@@ -50,132 +62,183 @@ def center(points):
 		center = center + 1/len(points)*point
 	return center
 	
-def draw_point(point,color,is_visible):
-	if is_visible:
-		is_visible2 = point[2]<-1 and point[2]<point[0]<-point[2] and point[2]<point[1]<-point[2]
-		if is_visible2:
-			projection = coord3d_to_coordscreen(point)
-			pixel = coordscreen_to_pixels(projection)
-			screen.set_at(pixel,color)
-	
-def draw_line(point_A,point_B,color,is_visible):
-	if is_visible:
-		projection_A = coord3d_to_coordscreen(point_A)
-		pixel_A = coordscreen_to_pixels(projection_A)
-		projection_B = coord3d_to_coordscreen(point_B)
-		pixel_B = coordscreen_to_pixels(projection_B)
-		aaline(screen, color, pixel_A, pixel_B)
-	
-def draw_triangle(point_A,point_B,point_C,color,is_visible):
-	if is_visible:
-		projection_A = coord3d_to_coordscreen(point_A)
-		pixel_A = coordscreen_to_pixels(projection_A)
-		projection_B = coord3d_to_coordscreen(point_B)
-		pixel_B = coordscreen_to_pixels(projection_B)
-		projection_C = coord3d_to_coordscreen(point_C)
-		pixel_C = coordscreen_to_pixels(projection_C)
-		polygon(screen,color,[pixel_A, pixel_B, pixel_C])
-		
-def draw_triangle_with_lights(point_A,point_B,point_C,color,is_visible):
-	if is_visible:
-		M = projection_point_plane(point_S,[point_A,point_B,point_C])
-		m = np.linalg.norm(M,ord=2)
-		pixel_A = np.array(coordscreen_to_pixels(coord3d_to_coordscreen(point_A)))
-		pixel_B = np.array(coordscreen_to_pixels(coord3d_to_coordscreen(point_B)))
-		pixel_C = np.array(coordscreen_to_pixels(coord3d_to_coordscreen(point_C)))
-		u, v = pixel_B-pixel_A, pixel_C-pixel_A
-		AB, AC = point_B-point_A, point_C-point_A
-		n_points = 120
-		for i in range(n_points):
-			for j in range(n_points-i):
-				R = point_A+AB*i/n_points+AC*j/n_points-point_S
-				r = np.linalg.norm(R,ord=2)
-				sin = m/r
-				ds = sin / (r*r)
-				if ds>1:
-					ds = 1
-				pixel = pixel_A + u*i/n_points + v*j/n_points
-				color_light = (int(color[0]*ds*0.5+0.5),
-								int(color[1]*ds*0.5+0.5),int(color[2]*ds*0.5+0.5))
-				screen.set_at((int(pixel[0]),int(pixel[1])),color_light)
-				
+def draw_polygon_with_lights(vertices, color, radius=2):
+	"""
+	Залить выпуклую грань освещёнными точками по одной общей сетке,
+	чтобы не было швов между треугольниками разбиения.
+	vertices — 3D-точки грани по порядку.
+	"""
+	vs = [np.asarray(v, dtype=float) for v in vertices]
+	if len(vs) < 3:
+		return
+	M = projection_point_plane(point_S, [vs[0], vs[1], vs[2]])
+	m = np.linalg.norm(M, ord=2)
+	p0 = vs[0]
+	N = np.cross(vs[1] - p0, vs[2] - p0)
+	norm_N = np.linalg.norm(N)
+	if norm_N < 1e-12:
+		return
+	N = N / norm_N
+	u = (vs[1] - p0) / np.linalg.norm(vs[1] - p0)
+	v = np.cross(N, u)
+	uv = np.array([[np.dot(p - p0, u), np.dot(p - p0, v)] for p in vs])
+	min_x, max_x = uv[:, 0].min(), uv[:, 0].max()
+	min_y, max_y = uv[:, 1].min(), uv[:, 1].max()
+	span = max(max_x - min_x, max_y - min_y)
+	if span < 1e-9:
+		return
+	n = 72
+	step = span / n
+	xs = np.arange(min_x, max_x + step, step)
+	ys = np.arange(min_y, max_y + step, step)
+	gx, gy = np.meshgrid(xs, ys)
+	pts2d = np.column_stack([gx.ravel(), gy.ravel()])
+	area2 = 0.0
+	for i in range(len(vs)):
+		a = uv[i]
+		b = uv[(i + 1) % len(vs)]
+		area2 += a[0] * b[1] - b[0] * a[1]
+	ccw = area2 > 0
+	inside = np.ones(len(pts2d), dtype=bool)
+	for i in range(len(vs)):
+		a = uv[i]
+		b = uv[(i + 1) % len(vs)]
+		cross = (b[0] - a[0]) * (pts2d[:, 1] - a[1]) - (b[1] - a[1]) * (pts2d[:, 0] - a[0])
+		if ccw:
+			inside &= (cross >= -1e-9)
+		else:
+			inside &= (cross <= 1e-9)
+	pts2d = pts2d[inside]
+	if len(pts2d) == 0:
+		return
+	P = p0 + pts2d[:, 0, None] * u + pts2d[:, 1, None] * v
+	S = np.asarray(point_S, dtype=float)
+	R = P - S
+	r = np.linalg.norm(R, axis=1)
+	r3 = r * r * r
+	with np.errstate(divide="ignore", invalid="ignore"):
+		ds = np.minimum(m / r3, 1.0)
+	ds = np.nan_to_num(ds, nan=1.0, posinf=1.0)
+	col = np.floor(np.asarray(color, dtype=float) * ds[:, None] * 0.5 + 0.5).astype(np.uint8)
+	sx = P[:, 0] / P[:, 2] * z_screen
+	sy = P[:, 1] / P[:, 2] * z_screen
+	ix = np.floor(500.0 * (sx + 1.0)).astype(int)
+	iy = np.floor(-500.0 * (sy - 1.0)).astype(int)
+	for x, y, c in zip(ix.tolist(), iy.tolist(), col.tolist()):
+		circle(screen, tuple(c), (x, y), radius)
 
-def draw_tetr(tetr,color):
-	"""
-	Draw lines - projections of tetrahedrons ribs
-	Not draw some ribs if point is behind plane or a rib is behind two planes
-	"""
-	
-	A = is_point_beside_plane(tetr[1],[tetr[2],tetr[3],tetr[4]])
-	B = is_point_beside_plane(tetr[2],[tetr[1],tetr[3],tetr[4]])
-	C = is_point_beside_plane(tetr[3],[tetr[1],tetr[2],tetr[4]])
-	D = is_point_beside_plane(tetr[4],[tetr[1],tetr[2],tetr[3]])
-	AB = (is_point_beside_plane(center([tetr[1],tetr[2]]),[tetr[1],tetr[3],tetr[4]]) or
-			is_point_beside_plane(center([tetr[1],tetr[2]]),[tetr[2],tetr[3],tetr[4]]))
-	AC = (is_point_beside_plane(center([tetr[1],tetr[3]]),[tetr[1],tetr[2],tetr[4]]) or
-			is_point_beside_plane(center([tetr[1],tetr[3]]),[tetr[3],tetr[2],tetr[4]]))
-	AD = (is_point_beside_plane(center([tetr[1],tetr[4]]),[tetr[1],tetr[2],tetr[3]]) or
-			is_point_beside_plane(center([tetr[1],tetr[4]]),[tetr[4],tetr[2],tetr[3]]))
-	BC = (is_point_beside_plane(center([tetr[2],tetr[3]]),[tetr[2],tetr[1],tetr[4]]) or
-			is_point_beside_plane(center([tetr[2],tetr[3]]),[tetr[3],tetr[1],tetr[4]]))
-	BD = (is_point_beside_plane(center([tetr[2],tetr[4]]),[tetr[2],tetr[1],tetr[3]]) or
-			is_point_beside_plane(center([tetr[2],tetr[4]]),[tetr[4],tetr[1],tetr[3]]))
-	CD = (is_point_beside_plane(center([tetr[3],tetr[4]]),[tetr[3],tetr[1],tetr[2]]) or
-			is_point_beside_plane(center([tetr[3],tetr[4]]),[tetr[4],tetr[1],tetr[2]]))
-	ABC = (is_point_beside_plane(center([tetr[1],tetr[2],tetr[3]]),[tetr[1],tetr[2],tetr[4]]) or
-			is_point_beside_plane(center([tetr[1],tetr[2],tetr[3]]),[tetr[1],tetr[3],tetr[4]]) or
-			is_point_beside_plane(center([tetr[1],tetr[2],tetr[3]]),[tetr[2],tetr[3],tetr[4]]))
-	ABD = (is_point_beside_plane(center([tetr[1],tetr[2],tetr[4]]),[tetr[1],tetr[2],tetr[3]]) or
-			is_point_beside_plane(center([tetr[1],tetr[2],tetr[4]]),[tetr[1],tetr[3],tetr[4]]) or
-			is_point_beside_plane(center([tetr[1],tetr[2],tetr[4]]),[tetr[2],tetr[3],tetr[4]]))
-	ACD = (is_point_beside_plane(center([tetr[1],tetr[3],tetr[4]]),[tetr[1],tetr[2],tetr[3]]) or
-			is_point_beside_plane(center([tetr[1],tetr[3],tetr[4]]),[tetr[1],tetr[2],tetr[4]]) or
-			is_point_beside_plane(center([tetr[1],tetr[3],tetr[4]]),[tetr[2],tetr[3],tetr[4]]))
-	BCD = (is_point_beside_plane(center([tetr[2],tetr[3],tetr[4]]),[tetr[1],tetr[2],tetr[3]]) or
-			is_point_beside_plane(center([tetr[2],tetr[3],tetr[4]]),[tetr[1],tetr[2],tetr[4]]) or
-			is_point_beside_plane(center([tetr[2],tetr[3],tetr[4]]),[tetr[1],tetr[3],tetr[4]]))
-	draw_triangle_with_lights(tetr[1],tetr[2],tetr[3],RED,
-					(not A) and (not B) and (not C) and (not AB) and (not BC) and (not AC) and (not ABC))
-	draw_triangle_with_lights(tetr[1],tetr[2],tetr[4],YELLOW,
-					(not A) and (not B) and (not D) and (not AB) and (not BD) and (not AD) and (not ABD))
-	draw_triangle_with_lights(tetr[1],tetr[3],tetr[4],GREEN,
-					(not A) and (not C) and (not D) and (not AC) and (not CD) and (not AD) and (not ACD))
-	draw_triangle_with_lights(tetr[2],tetr[3],tetr[4],BLUE,
-					(not B) and (not C) and (not D) and (not BC) and (not CD) and (not BD) and (not BCD))
-	#draw_line(tetr[1],tetr[2],color, (not A) and (not B) and (not AB))
-	#draw_line(tetr[1],tetr[3],color, (not A) and (not C) and (not AC))
-	#draw_line(tetr[1],tetr[4],color, (not A) and (not D) and (not AD))
-	#draw_line(tetr[2],tetr[3],color, (not B) and (not C) and (not BC))
-	#draw_line(tetr[2],tetr[4],color, (not B) and (not D) and (not BD))
-	#draw_line(tetr[3],tetr[4],color, (not C) and (not D) and (not CD))
-		
-def figure_move(tetr,v):
-	"""
-	Move all points of tetrahedron
-	"""
-	tetr[:,0:3]+=v
-	
-def rotate(rot,tetr):
-	"""
-	Rotate tetrahedron around point O which is tetr[0] and vector rot
-	"""
-	OA = tetr[1]-tetr[0]
-	OB = tetr[2]-tetr[0]
-	OC = tetr[3]-tetr[0]
-	OD = tetr[4]-tetr[0]
-	q_1 = np.quaternion(0,OA[0],OA[1],OA[2])
-	q_2 = np.quaternion(0,OB[0],OB[1],OB[2])
-	q_3 = np.quaternion(0,OC[0],OC[1],OC[2])
-	q_4 = np.quaternion(0,OD[0],OD[1],OD[2])
-	q_1 = rot*q_1*rot**(-1)
-	q_2 = rot*q_2*rot**(-1)
-	q_3 = rot*q_3*rot**(-1)
-	q_4 = rot*q_4*rot**(-1)
-	tetr[1] = [tetr[0][0]+q_1.x,tetr[0][1]+q_1.y,tetr[0][2]+q_1.z]
-	tetr[2] = [tetr[0][0]+q_2.x,tetr[0][1]+q_2.y,tetr[0][2]+q_2.z]
-	tetr[3] = [tetr[0][0]+q_3.x,tetr[0][1]+q_3.y,tetr[0][2]+q_3.z]
-	tetr[4] = [tetr[0][0]+q_4.x,tetr[0][1]+q_4.y,tetr[0][2]+q_4.z]
+class Polyhedron:
+	def __init__(self, vertices, faces, face_colors=None):
+		self.vertices = np.array(vertices, dtype=float)
+		self.faces = [tuple(f) for f in faces]
+		if face_colors is None:
+			face_colors = [WHITE] * len(self.faces)
+		self.face_colors = list(face_colors)
 
+	def move(self, v):
+		self.vertices += np.asarray(v, dtype=float)
+
+	def rotate(self, rot):
+		center = self.vertices.mean(axis=0)
+		for k in range(len(self.vertices)):
+			rel = self.vertices[k] - center
+			q = np.quaternion(0, rel[0], rel[1], rel[2])
+			q = rot * q * rot**(-1)
+			self.vertices[k] = center + np.array([q.x, q.y, q.z])
+
+	def face_visible(self, face_index):
+		face = self.faces[face_index]
+		mid = center([self.vertices[i] for i in face])
+		for j, other in enumerate(self.faces):
+			if j == face_index:
+				continue
+			pts = [self.vertices[k] for k in other]
+			for t in range(1, len(pts) - 1):
+				if is_point_beside_plane(mid, [pts[0], pts[t], pts[t+1]]):
+					return False
+		return True
+
+	def draw(self):
+		for idx, face in enumerate(self.faces):
+			if not self.face_visible(idx):
+				continue
+			pts = [self.vertices[i] for i in face]
+			draw_polygon_with_lights(pts, self.face_colors[idx])
+
+PHI = (1 + 5**0.5) / 2
+
+def normalize_vertices(vertices):
+	"""Привести радиус описанной сферы к 1 (вершины заданы вокруг начала координат)."""
+	v = np.array(vertices, dtype=float)
+	v /= np.linalg.norm(v, axis=1).max()
+	return v
+
+def distinct_colors(n):
+	"""Сгенерировать n различимых цветов."""
+	cols = []
+	for i in range(n):
+		h = (i * 0.618033988749895) % 1.0
+		r, g, b = colorsys.hsv_to_rgb(h, 0.85, 1.0)
+		cols.append((int(r*255), int(g*255), int(b*255)))
+	return cols
+
+PLATONIC_SOLIDS = {
+	"Тетраэдр": {
+		"vertices": normalize_vertices([(1,1,1),(1,-1,-1),(-1,1,-1),(-1,-1,1)]),
+		"faces": [(0,1,2),(0,3,2),(1,3,2),(1,3,0)],
+		"colors": [RED, YELLOW, GREEN, BLUE],
+	},
+	"Куб": {
+		"vertices": normalize_vertices([(-1,-1,-1),(1,-1,-1),(1,1,-1),(-1,1,-1),(-1,-1,1),(1,-1,1),(1,1,1),(-1,1,1)]),
+		"faces": [(2,3,0,1),(1,5,4,0),(3,7,4,0),(2,6,5,1),(2,3,7,6),(5,6,7,4)],
+	},
+	"Октаэдр": {
+		"vertices": normalize_vertices([(1,0,0),(-1,0,0),(0,1,0),(0,-1,0),(0,0,1),(0,0,-1)]),
+		"faces": [(3,5,1),(3,5,0),(3,4,1),(3,4,0),(2,5,0),(2,5,1),(2,4,0),(2,4,1)],
+	},
+	"Додекаэдр": {
+		"vertices": normalize_vertices([
+			(1,1,1),(1,1,-1),(1,-1,1),(1,-1,-1),(-1,1,1),(-1,1,-1),(-1,-1,1),(-1,-1,-1),
+			(0,1/PHI,PHI),(0,1/PHI,-PHI),(0,-1/PHI,PHI),(0,-1/PHI,-PHI),
+			(1/PHI,PHI,0),(1/PHI,-PHI,0),(-1/PHI,PHI,0),(-1/PHI,-PHI,0),
+			(PHI,0,1/PHI),(PHI,0,-1/PHI),(-PHI,0,1/PHI),(-PHI,0,-1/PHI),
+		]),
+		"faces": [
+			(9,11,7,19,5),(5,14,12,1,9),(4,14,5,19,18),
+			(2,13,15,6,10),(3,13,15,7,11),(6,15,7,19,18),
+			(2,16,17,3,13),(3,11,9,1,17),(1,17,16,0,12),
+			(6,18,4,8,10),(2,16,0,8,10),(4,14,12,0,8),
+		],
+	},
+	"Икосаэдр": {
+		"vertices": normalize_vertices([
+			(0,1,PHI),(0,1,-PHI),(0,-1,PHI),(0,-1,-PHI),
+			(1,PHI,0),(1,-PHI,0),(-1,PHI,0),(-1,-PHI,0),
+			(PHI,0,1),(PHI,0,-1),(-PHI,0,1),(-PHI,0,-1),
+		]),
+		"faces": [
+			(0,6,10),(2,5,8),(0,2,8),(0,2,10),(5,9,8),
+			(3,9,1),(3,9,5),(3,11,1),(6,11,1),(6,11,10),
+			(0,4,8),(4,6,0),(4,6,1),(4,9,1),(4,9,8),
+			(2,7,10),(3,7,5),(2,7,5),(7,11,3),(7,11,10),
+		],
+	},
+}
+
+names = list(PLATONIC_SOLIDS)
+print("Платоновы тела:")
+for i, name in enumerate(names, 1):
+	print("  %d. %s" % (i, name))
+while True:
+	answer = input("Выберите номер (1-%d) или Enter для Тетраэдра: " % len(names)).strip()
+	if answer == "":
+		chosen = names[0]
+		break
+	if answer.isdigit() and 1 <= int(answer) <= len(names):
+		chosen = names[int(answer) - 1]
+		break
+	print("Неверный ввод, попробуйте ещё раз.")
+solid = PLATONIC_SOLIDS[chosen]
 
 pygame.init()
 
@@ -188,27 +251,17 @@ screen = pygame.display.set_mode((x_pixels, y_pixels))
 clock = pygame.time.Clock()
 finished = False
 
-BLACK = (0,0,0)
-WHITE = (255,255,255)
-GRAY = (125, 125, 125)
-RED = (255,0,0)
-GREEN = (0,255,0)
-BLUE = (0,0,255)
-YELLOW = (255,255,0)
-
 #Point of view / origin point
 point_O = np.array([0,0,0])
 #Light
 point_S = np.array([0,0,0])
-#First coordinates of the center of tetrahedron
-point_T = np.array([0,0,-1.5])
-#First local coordinates of tetrahedron points
-vec_TA = np.array([3**0.5/6,-6**0.5/12,0.5])
-vec_TB = np.array([-3**0.5/3,-6**0.5/12,0])
-vec_TC = np.array([3**0.5/6,-6**0.5/12,-0.5])
-vec_TD = np.array([0,6**0.5/4,0])
-tetrahedron = np.array([point_T,point_T+vec_TA,point_T+vec_TB,
-						point_T+vec_TC,point_T+vec_TD])
+#Scale and center of the selected solid
+SCALE = 0.6
+CENTER = np.array([0.0, 0.0, -1.5])
+polyhedron = Polyhedron(
+	[np.array(v) * SCALE + CENTER for v in solid["vertices"]],
+	solid["faces"],
+	solid.get("colors") or distinct_colors(len(solid["faces"])))
 #rotation around vector (0,1,0) on 2 degree in a frame
 alpha = np.pi/180
 rot1 = np.quaternion(np.cos(alpha),0,np.sin(alpha),0)
@@ -217,7 +270,7 @@ rot2 = np.quaternion(np.cos(alpha),np.sin(alpha),0,0)
 rot2r = np.quaternion(np.cos(alpha),-np.sin(alpha),0,0)
 rot3 = np.quaternion(np.cos(alpha),0,0,np.sin(alpha))
 rot3r = np.quaternion(np.cos(alpha),0,0,-np.sin(alpha))
-draw_tetr(tetrahedron,WHITE)
+polyhedron.draw()
 pygame.display.update()
 screen.fill(BLACK)
 
@@ -309,20 +362,20 @@ while not finished:
 	if pressed_keys[pygame.K_s]:
 		move_direction[2] += +0.01
 
-	figure_move(tetrahedron, move_direction)
+	polyhedron.move(move_direction)
 
 	if rot_010:
-		rotate(rot1,tetrahedron)
+		polyhedron.rotate(rot1)
 	if rot_010r:
-		rotate(rot1r,tetrahedron)
+		polyhedron.rotate(rot1r)
 	if rot_100:
-		rotate(rot2,tetrahedron)
+		polyhedron.rotate(rot2)
 	if rot_100r:
-		rotate(rot2r,tetrahedron)
+		polyhedron.rotate(rot2r)
 	if rot_001:
-		rotate(rot3,tetrahedron)
+		polyhedron.rotate(rot3)
 	if rot_001r:
-		rotate(rot3r,tetrahedron)
+		polyhedron.rotate(rot3r)
 	
 	if light_right:
 		point_S = point_S + np.array([0.01,0,0])
@@ -333,7 +386,7 @@ while not finished:
 	if light_down:
 		point_S = point_S + np.array([0,-0.01,0])
 	
-	draw_tetr(tetrahedron,WHITE)
+	polyhedron.draw()
 	pygame.display.update()
 	screen.fill(BLACK)
 
