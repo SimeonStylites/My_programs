@@ -4,6 +4,8 @@ import numpy as np
 import quaternion
 from pygame.draw import *
 import colorsys
+import os
+import sys
 
 BLACK = (0,0,0)
 WHITE = (255,255,255)
@@ -13,18 +15,36 @@ GREEN = (0,255,0)
 BLUE = (0,0,255)
 YELLOW = (255,255,0)
 
+#Плоскость экрана и окно просмотра: одна единица проекции — PX_SCALE пикселей,
+#PX_ORIGIN — центр экрана в пикселях
+z_screen = -1
+PX_SCALE = 500.0
+PX_ORIGIN = (500.0, 500.0)
+
 def coord3d_to_coordscreen(point):
 	"""
 	Make a projection of a point in 3d on a screen, located on z_screen
 	"""
 	return np.array([point[0]/point[2]*z_screen,point[1]/point[2]*z_screen])
 
+def project_to_pixels(point):
+	"""
+	Transform a 3D point, or an array of 3D points, into pixels of the viewport
+	"""
+	pts = np.atleast_2d(np.asarray(point, dtype=float))
+	sx = pts[:, 0] / pts[:, 2] * z_screen
+	sy = pts[:, 1] / pts[:, 2] * z_screen
+	ix = np.floor(PX_ORIGIN[0] + PX_SCALE * sx).astype(int)
+	iy = np.floor(PX_ORIGIN[1] - PX_SCALE * sy).astype(int)
+	return np.column_stack([ix, iy])
+
 def coordscreen_to_pixels(projection):
 	"""
 	transform coordinates to the pixels
 	-1<x_coord<1; -1<y_coord<1
 	"""
-	return (int(500.0*(projection[0]+1.0)),int(-500.0*(projection[1]-1.0)))
+	ix, iy = project_to_pixels([projection[0] / z_screen, projection[1] / z_screen, 1.0])[0]
+	return (int(ix), int(iy))
 
 def projection_point_plane(point,plane):
 	"""
@@ -62,16 +82,22 @@ def center(points):
 		center = center + 1/len(points)*point
 	return center
 	
-def draw_polygon_with_lights(vertices, color, radius=2):
+def draw_polygon_with_lights(vertices, color, radius=2, samples=72, surface=None, light=None):
 	"""
 	Залить выпуклую грань освещёнными точками по одной общей сетке,
 	чтобы не было швов между треугольниками разбиения.
 	vertices — 3D-точки грани по порядку.
+	samples — сторон сетки точек, radius — радиус точки в пикселях.
+	Возвращает минимальную и максимальную яркость точек грани и их число.
 	"""
 	vs = [np.asarray(v, dtype=float) for v in vertices]
 	if len(vs) < 3:
-		return
-	M = projection_point_plane(point_S, [vs[0], vs[1], vs[2]])
+		return None
+	if surface is None:
+		surface = screen
+	if light is None:
+		light = point_S
+	M = projection_point_plane(light, [vs[0], vs[1], vs[2]])
 	m = np.linalg.norm(M, ord=2)
 	p0 = vs[0]
 	N = np.cross(vs[1] - p0, vs[2] - p0)
@@ -87,7 +113,7 @@ def draw_polygon_with_lights(vertices, color, radius=2):
 	span = max(max_x - min_x, max_y - min_y)
 	if span < 1e-9:
 		return
-	n = 72
+	n = samples
 	step = span / n
 	xs = np.arange(min_x, max_x + step, step)
 	ys = np.arange(min_y, max_y + step, step)
@@ -112,7 +138,7 @@ def draw_polygon_with_lights(vertices, color, radius=2):
 	if len(pts2d) == 0:
 		return
 	P = p0 + pts2d[:, 0, None] * u + pts2d[:, 1, None] * v
-	S = np.asarray(point_S, dtype=float)
+	S = np.asarray(light, dtype=float)
 	R = P - S
 	r = np.linalg.norm(R, axis=1)
 	r3 = r * r * r
@@ -120,12 +146,10 @@ def draw_polygon_with_lights(vertices, color, radius=2):
 		ds = np.minimum(m / r3, 1.0)
 	ds = np.nan_to_num(ds, nan=1.0, posinf=1.0)
 	col = np.floor(np.asarray(color, dtype=float) * ds[:, None] * 0.5 + 0.5).astype(np.uint8)
-	sx = P[:, 0] / P[:, 2] * z_screen
-	sy = P[:, 1] / P[:, 2] * z_screen
-	ix = np.floor(500.0 * (sx + 1.0)).astype(int)
-	iy = np.floor(-500.0 * (sy - 1.0)).astype(int)
+	ix, iy = project_to_pixels(P).T
 	for x, y, c in zip(ix.tolist(), iy.tolist(), col.tolist()):
-		circle(screen, tuple(c), (x, y), radius)
+		circle(surface, tuple(c), (x, y), radius)
+	return (float(ds.min()), float(ds.max()), len(col))
 
 class Polyhedron:
 	def __init__(self, vertices, faces, face_colors=None):
@@ -158,12 +182,19 @@ class Polyhedron:
 					return False
 		return True
 
-	def draw(self):
+	def draw(self, surface=None, light=None, radius=2, samples=72):
+		"""
+		Залить все видимые грани, вернуть статистику освещения по каждой из них
+		"""
+		stats = []
 		for idx, face in enumerate(self.faces):
 			if not self.face_visible(idx):
 				continue
 			pts = [self.vertices[i] for i in face]
-			draw_polygon_with_lights(pts, self.face_colors[idx])
+			face_stats = draw_polygon_with_lights(pts, self.face_colors[idx], radius, samples, surface, light)
+			if face_stats is not None:
+				stats.append((idx, ) + face_stats)
+		return stats
 
 PHI = (1 + 5**0.5) / 2
 
@@ -225,6 +256,128 @@ PLATONIC_SOLIDS = {
 	},
 }
 
+#Кадры для печати и соцсетей: python 3d_polygons.py --poster --
+POSTER_SIZE = (1200, 627)
+#Точки рисуются в масштабе 1:1, как в интерактиве. Если рендерить крупнее
+#и потом уменьшать, кружки сливаются в ровную заливку и стиль меняется
+#Радиус точки и число точек на грань — дефолтные, как в интерактиве
+POSTER_RADIUS = 2
+POSTER_SAMPLES = 72
+POSTER_SOLID = "Додекаэдр"
+POSTER_FILE = "dodeca_featured_%s.png"
+POSTER_SCALE = 0.58
+POSTER_CENTER = np.array([0.0, 0.0, -1.45])
+POSTER_POSE = (((0, 1, 0), 96.0), ((1, 0, 0), 36.0))
+POSTER_LIGHT = np.array([-0.55, 0.65, -0.60])
+POSTER_BG = BLACK
+
+def quat_axis_angle(axis, degrees):
+	"""
+	Кватернион поворота вокруг оси на заданное число градусов
+	"""
+	a = np.radians(degrees) / 2
+	axis = np.asarray(axis, dtype=float)
+	return np.quaternion(np.cos(a), *(np.sin(a) * axis))
+
+def gradient_palette(n, hue_from, hue_to, sat=0.7, val=1.0):
+	"""
+	n различимых цветов, равномерно переходящих от hue_from к hue_to
+	"""
+	cols = []
+	for i in range(n):
+		t = i / (n - 1) if n > 1 else 0.0
+		h = (hue_from + (hue_to - hue_from) * t) % 1.0
+		s = sat + 0.18 * (1.0 - abs(2.0 * t - 1.0))
+		v = val - 0.12 * t
+		r, g, b = colorsys.hsv_to_rgb(h, min(s, 1.0), max(v, 0.0))
+		cols.append((int(r * 255), int(g * 255), int(b * 255)))
+	return cols
+
+POSTER_PALETTES = {
+	"site": lambda n: gradient_palette(n, 0.50, 0.72, sat=0.68),
+	"gold": lambda n: gradient_palette(n, 0.045, 0.125, sat=0.80, val=0.98),
+	"code": distinct_colors,
+}
+
+def poster_background(size, bg):
+	"""
+	Фон кадра — тот же BLACK, которым заливается экран в интерактиве
+	"""
+	return np.zeros((size[1], size[0], 3), dtype=np.float32) + np.asarray(bg, dtype=np.float32)
+
+def poster_report(filename, stats, raw):
+	"""
+	Напечатать то, что можно проверить, не глядя на картинку:
+	размер кадра, размер и положение фигуры, диапазон освещения
+	"""
+	w, h = POSTER_SIZE
+	ys, xs = np.nonzero(raw[:, :, 3] > 8)
+	if len(xs) == 0:
+		print("  %s: фигура не отрисована" % filename)
+		return
+	print("%s: %dx%d, видно граней %d из %d, точек %d"
+		  % (filename, w, h, len(stats), len(PLATONIC_SOLIDS[POSTER_SOLID]["faces"]), sum(s[3] for s in stats)))
+	print("  фигура: x %d..%d, y %d..%d — %.0f%% высоты, %.0f%% ширины, центр x %+.0f px"
+		  % (xs.min(), xs.max(), ys.min(), ys.max(),
+			 100.0 * (ys.max() - ys.min()) / h, 100.0 * (xs.max() - xs.min()) / w,
+			 (xs.min() + xs.max()) / 2.0 - w / 2.0))
+	print("  освещение: ds от %.3f до %.3f" % (min(s[1] for s in stats), max(s[2] for s in stats)))
+	dotted = raw[:, :, 3] > 0
+	span = 0
+	for y in range(ys.min(), ys.max() + 1):
+		row = np.nonzero(dotted[y])[0]
+		if len(row):
+			span += row.max() - row.min() + 1
+	print("  кружками заполнено %.0f%% силуэта" % (100.0 * dotted.sum() / max(span, 1)))
+	if xs.min() < 4 or ys.min() < 4 or xs.max() > w - 5 or ys.max() > h - 5:
+		print("  ВНИМАНИЕ: фигура касается края кадра")
+	if ys.max() - ys.min() < 0.5 * h:
+		print("  ВНИМАНИЕ: фигура занимает меньше половины высоты")
+
+def render_poster(solid_name, palette_name, filename):
+	"""
+	Отрисовать один кадр многогранника в PNG-файл: тот же точечный рендер 1:1
+	и тот же чёрный фон, что и в интерактиве
+	"""
+	from PIL import Image
+	global PX_ORIGIN
+	solid = PLATONIC_SOLIDS[solid_name]
+	colors = solid.get("colors") or POSTER_PALETTES[palette_name](len(solid["faces"]))
+	polyhedron = Polyhedron([np.array(v) * POSTER_SCALE + POSTER_CENTER for v in solid["vertices"]], solid["faces"], colors)
+	for axis, degrees in POSTER_POSE:
+		polyhedron.rotate(quat_axis_angle(axis, degrees))
+	w, h = POSTER_SIZE
+	saved_origin = PX_ORIGIN
+	PX_ORIGIN = (w / 2, h / 2)
+	layer = pygame.Surface((w, h), pygame.SRCALPHA)
+	stats = polyhedron.draw(surface=layer, light=POSTER_LIGHT, radius=POSTER_RADIUS, samples=POSTER_SAMPLES)
+	raw = np.frombuffer(pygame.image.tobytes(layer, "RGBA", True), dtype=np.uint8).reshape(h, w, 4)
+	PX_ORIGIN = saved_origin
+	alpha = raw[:, :, 3:4].astype(np.float32) / 255.0
+	frame = poster_background((w, h), POSTER_BG)
+	image = np.clip(frame * (1.0 - alpha) + raw[:, :, :3] * alpha, 0, 255).astype(np.uint8)
+	Image.fromarray(image).save(filename)
+	return stats, raw
+
+def render_posters(argv):
+	"""
+	Отрисовать кадры в PNG-файлы, не открывая окна: --poster [палитра ...]
+	"""
+	os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+	pygame.init()
+	for palette_name in argv or list(POSTER_PALETTES):
+		if palette_name not in POSTER_PALETTES:
+			print("Нет палитры %s, есть: %s" % (palette_name, ", ".join(POSTER_PALETTES)))
+			continue
+		filename = POSTER_FILE % palette_name
+		stats, raw = render_poster(POSTER_SOLID, palette_name, filename)
+		poster_report(filename, stats, raw)
+	pygame.quit()
+
+if "--poster" in sys.argv:
+	render_posters([a for a in sys.argv[1:] if not a.startswith("-")])
+	sys.exit(0)
+
 names = list(PLATONIC_SOLIDS)
 print("Платоновы тела:")
 for i, name in enumerate(names, 1):
@@ -244,7 +397,6 @@ pygame.init()
 
 
 FPS = 30
-z_screen = -1
 x_pixels = 1000
 y_pixels = 1000
 screen = pygame.display.set_mode((x_pixels, y_pixels))
