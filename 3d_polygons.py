@@ -279,24 +279,21 @@ def quat_axis_angle(axis, degrees):
 	axis = np.asarray(axis, dtype=float)
 	return np.quaternion(np.cos(a), *(np.sin(a) * axis))
 
-def gradient_palette(n, hue_from, hue_to, sat=0.7, val=1.0):
-	"""
-	n различимых цветов, равномерно переходящих от hue_from к hue_to
-	"""
-	cols = []
-	for i in range(n):
-		t = i / (n - 1) if n > 1 else 0.0
-		h = (hue_from + (hue_to - hue_from) * t) % 1.0
-		s = sat + 0.18 * (1.0 - abs(2.0 * t - 1.0))
-		v = val - 0.12 * t
-		r, g, b = colorsys.hsv_to_rgb(h, min(s, 1.0), max(v, 0.0))
-		cols.append((int(r * 255), int(g * 255), int(b * 255)))
-	return cols
-
+#По 12 цветов на 12 граней додекаэдра
 POSTER_PALETTES = {
-	"site": lambda n: gradient_palette(n, 0.50, 0.72, sat=0.68),
-	"gold": lambda n: gradient_palette(n, 0.045, 0.125, sat=0.80, val=0.98),
-	"code": distinct_colors,
+	"site": [
+		(81, 255, 255), (72, 230, 252), (63, 204, 249),
+		(54, 177, 246), (46, 148, 243), (37, 119, 241),
+		(37, 93, 238), (44, 75, 235), (51, 58, 232),
+		(72, 58, 229), (97, 65, 227), (120, 71, 224),
+	],
+	"gold": [
+		(249, 103, 49), (247, 105, 41), (244, 108, 32),
+		(241, 111, 24), (238, 115, 16), (235, 119, 8),
+		(233, 127, 8), (230, 139, 15), (227, 149, 23),
+		(224, 159, 30), (222, 167, 37), (219, 175, 43),
+	],
+	"code": distinct_colors(12),
 }
 
 def poster_background(size, bg):
@@ -304,35 +301,6 @@ def poster_background(size, bg):
 	Фон кадра — тот же BLACK, которым заливается экран в интерактиве
 	"""
 	return np.zeros((size[1], size[0], 3), dtype=np.float32) + np.asarray(bg, dtype=np.float32)
-
-def poster_report(filename, stats, raw):
-	"""
-	Напечатать то, что можно проверить, не глядя на картинку:
-	размер кадра, размер и положение фигуры, диапазон освещения
-	"""
-	w, h = POSTER_SIZE
-	ys, xs = np.nonzero(raw[:, :, 3] > 8)
-	if len(xs) == 0:
-		print("  %s: фигура не отрисована" % filename)
-		return
-	print("%s: %dx%d, видно граней %d из %d, точек %d"
-		  % (filename, w, h, len(stats), len(PLATONIC_SOLIDS[POSTER_SOLID]["faces"]), sum(s[3] for s in stats)))
-	print("  фигура: x %d..%d, y %d..%d — %.0f%% высоты, %.0f%% ширины, центр x %+.0f px"
-		  % (xs.min(), xs.max(), ys.min(), ys.max(),
-			 100.0 * (ys.max() - ys.min()) / h, 100.0 * (xs.max() - xs.min()) / w,
-			 (xs.min() + xs.max()) / 2.0 - w / 2.0))
-	print("  освещение: ds от %.3f до %.3f" % (min(s[1] for s in stats), max(s[2] for s in stats)))
-	dotted = raw[:, :, 3] > 0
-	span = 0
-	for y in range(ys.min(), ys.max() + 1):
-		row = np.nonzero(dotted[y])[0]
-		if len(row):
-			span += row.max() - row.min() + 1
-	print("  кружками заполнено %.0f%% силуэта" % (100.0 * dotted.sum() / max(span, 1)))
-	if xs.min() < 4 or ys.min() < 4 or xs.max() > w - 5 or ys.max() > h - 5:
-		print("  ВНИМАНИЕ: фигура касается края кадра")
-	if ys.max() - ys.min() < 0.5 * h:
-		print("  ВНИМАНИЕ: фигура занимает меньше половины высоты")
 
 def render_poster(solid_name, palette_name, filename):
 	"""
@@ -342,7 +310,7 @@ def render_poster(solid_name, palette_name, filename):
 	from PIL import Image
 	global PX_ORIGIN
 	solid = PLATONIC_SOLIDS[solid_name]
-	colors = solid.get("colors") or POSTER_PALETTES[palette_name](len(solid["faces"]))
+	colors = solid.get("colors") or POSTER_PALETTES[palette_name]
 	polyhedron = Polyhedron([np.array(v) * POSTER_SCALE + POSTER_CENTER for v in solid["vertices"]], solid["faces"], colors)
 	for axis, degrees in POSTER_POSE:
 		polyhedron.rotate(quat_axis_angle(axis, degrees))
@@ -370,8 +338,8 @@ def render_posters(argv):
 			print("Нет палитры %s, есть: %s" % (palette_name, ", ".join(POSTER_PALETTES)))
 			continue
 		filename = POSTER_FILE % palette_name
-		stats, raw = render_poster(POSTER_SOLID, palette_name, filename)
-		poster_report(filename, stats, raw)
+		render_poster(POSTER_SOLID, palette_name, filename)
+		print("Сохранён %s" % filename)
 	pygame.quit()
 
 if "--poster" in sys.argv:
